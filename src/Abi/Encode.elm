@@ -608,10 +608,15 @@ abiEncodeList =
 --                 ++ String.fromInt size
 
 
+type DynamicSizeInfo
+    = MemorySize Int
+    | NumElements Int
+
+
 {-| (Maybe (Size of Dynamic Value), Value)
 -}
 type alias LowLevelEncoding =
-    ( Maybe Int, String )
+    ( Maybe DynamicSizeInfo, String )
 
 
 {-| -}
@@ -623,9 +628,16 @@ toStaticLLEncoding strVal =
 
 
 {-| -}
-toDynamicLLEncoding : String -> LowLevelEncoding
-toDynamicLLEncoding strVal =
-    ( Just <| String.length strVal // 2
+bytesOrStringToDynamicLLEncoding : String -> LowLevelEncoding
+bytesOrStringToDynamicLLEncoding strVal =
+    ( Just <| MemorySize <| String.length strVal // 2
+    , rightPadMod64 strVal
+    )
+
+
+listToDynamicLLEncoding : Int -> String -> LowLevelEncoding
+listToDynamicLLEncoding listLen strVal =
+    ( Just <| NumElements <| listLen
     , rightPadMod64 strVal
     )
 
@@ -652,7 +664,7 @@ lowLevelEncode enc =
             toStaticLLEncoding "0"
 
         DBytesE (Internal.Hex hexString) ->
-            toDynamicLLEncoding hexString
+            bytesOrStringToDynamicLLEncoding hexString
 
         BytesE (Internal.Hex hexString) ->
             IU.remove0x hexString
@@ -660,12 +672,12 @@ lowLevelEncode enc =
 
         StringE string_ ->
             stringToHex string_
-                |> toDynamicLLEncoding
+                |> bytesOrStringToDynamicLLEncoding
 
         ListE encodings ->
             abiEncodeList encodings
                 |> (\(Internal.Hex hexString) ->
-                        toDynamicLLEncoding hexString
+                        listToDynamicLLEncoding (List.length encodings) hexString
                    )
 
         CustomE string_ ->
@@ -677,9 +689,9 @@ lowLevelEncodeList : List LowLevelEncoding -> String
 lowLevelEncodeList vals =
     let
         reducer : LowLevelEncoding -> ( Int, String, String ) -> ( Int, String, String )
-        reducer ( mLength, val ) ( dynValPointer, staticVals, dynamicVals ) =
-            case mLength of
-                Just length ->
+        reducer ( lengthInfo, val ) ( dynValPointer, staticVals, dynamicVals ) =
+            case lengthInfo of
+                Just sizeInfo ->
                     let
                         newDynValPointer =
                             dynValPointer + 32 + (String.length val // 2)
@@ -689,7 +701,13 @@ lowLevelEncodeList vals =
                                 |> IU.leftPadTo64
 
                         newDynVals =
-                            Hex.toString length
+                            (case sizeInfo of
+                                MemorySize mSize ->
+                                    mSize
+                                NumElements num ->
+                                    num
+                            )
+                                |> Hex.toString
                                 |> IU.leftPadTo64
                                 |> (\lengthInHex -> lengthInHex ++ val)
                     in
@@ -724,7 +742,11 @@ rightPadMod64 str =
 
 tillMod64 : Int -> Int
 tillMod64 n =
-    64 - modBy 64 n
+    if modBy 64 n == 0 then
+        0
+
+    else
+        64 - modBy 64 n
 
 
 {-| Converts utf8 string to string of hex
