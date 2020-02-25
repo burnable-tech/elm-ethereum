@@ -1,3 +1,5 @@
+# Deprecated in favor of [cmditch/elm-ethereum](https://package.elm-lang.org/packages/cmditch/elm-ethereum/latest/).
+
 # [![elm-ethereum](https://cmdit.ch/images/elm-ethereum-logo.svg)](https://github.com/cmditch/elm-ethereum) elm-ethereum
 
 **Examples:**  
